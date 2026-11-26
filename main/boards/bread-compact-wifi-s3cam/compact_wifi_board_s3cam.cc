@@ -175,15 +175,15 @@ private:
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
         camera_ = new Esp32Camera(config);
 #if CONFIG_BREAD_COMPACT_WIFI_CAM_CAMERA_FIXES
-        // This board uses an OV5640. Its driver configures PIXFORMAT_RGB565
-        // but the sensor actually streams BGR565 (register 0x4300 = 0x61),
-        // so red and blue are reversed in the preview and the AI upload.
-        //
-        // Observed on this exact board:
-        //   - driver default byte swap ON  -> negative/inverted colors
-        //   - byte swap OFF                -> correct byte order but R/B swapped
-        // Therefore keep the native byte order (no byte swap) and additionally
-        // reorder the R/B 5-bit fields (BGR565 -> RGB565).
+        // This board uses an OV5640. The driver programs 0x4300 = 0x61 and
+        // reports PIXFORMAT_RGB565; the frame buffer lands in the byte order
+        // that the LVGL preview already treats as native (no extra byte swap).
+        // Empirically that yields a picture with correct green but red/blue
+        // reversed, i.e. the two 5-bit channels are swapped. So we keep the
+        // native byte order and only exchange R <-> B on the way into
+        // encode_buf_, which fixes both the preview and the uploaded JPEG.
+        // Do NOT enable SetSwapBytes: byte-swapping on top of the channel
+        // reorder scrambles the 5/6/5 fields and produces a wrong picture.
         camera_->SetSwapBytes(false);
         camera_->SetSwapRBChannels(true);
 #endif

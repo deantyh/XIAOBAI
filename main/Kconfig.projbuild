@@ -836,12 +836,11 @@ config BREAD_COMPACT_WIFI_CAM_CAMERA_FIXES
     depends on BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
     default n
     help
-        This board uses an OV5640 whose driver outputs BGR565 while declaring
-        PIXFORMAT_RGB565, so red and blue are reversed. Keep the native byte
-        order and reorder the R/B 5-bit fields (BGR565 -> RGB565) for both the
-        preview and the JPEG uploaded to the AI service. Also use QVGA
-        (320x240) to match the panel and scale the preview up to nearly fill
-        the screen instead of the default small box.
+        This board uses an OV5640. Its frame buffer arrives in the byte order
+        LVGL already accepts, but with the red and blue 5-bit channels swapped.
+        Reordering only R/B (without byte swapping) fixes both the preview and
+        the JPEG uploaded to the AI service. Also use QVGA (320x240) and scale
+        the preview to fit the 240x320 panel, centered.
 
 choice DISPLAY_LCD_TYPE
     depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_ESP32_LCD || BOARD_TYPE_WDMOMO_CGC || BOARD_TYPE_BREAD_COMPACT_WIFI_CAM || (BOARD_TYPE_WK_ESP32S3_DEV && WK_ESP32S3_DEV_DISPLAY_LCD)

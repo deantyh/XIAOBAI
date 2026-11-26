@@ -16,15 +16,15 @@
 
 ## 当前版本
 
-`V0.0.1`（详见 `VERSION` 与 `CHANGELOG.md`）。
+`V0.0.2`（详见 `VERSION` 与 `CHANGELOG.md`）。
 
 ## 源码结构
 
 - 板型：`bread-compact-wifi-s3cam`，定制构建变体 `bread-compact-wifi-s3cam-240x320-dl`。
 - 关键定制文件：
   - `main/boards/bread-compact-wifi-s3cam/` — 板级初始化、电源管理、变体配置
-  - `main/boards/common/esp32_camera.{h,cc}` — 摄像头采集与 BGR565→RGB565 修正
-  - `main/display/lcd_display.cc` — 预览图放大显示
+  - `main/boards/common/esp32_camera.{h,cc}` — 摄像头采集；先交换字节再交换红蓝通道
+  - `main/display/lcd_display.cc` — 预览图按比例居中显示
   - `main/Kconfig.projbuild` — 板级功能开关
 - 版本规则见 `VERSIONING.md`；硬件适配与烧录说明见 `HARDWARE_ADAPTATION.md`。
 

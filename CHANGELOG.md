@@ -3,6 +3,26 @@
 本项目（XIAOBAI）的所有版本变更记录。版本号规则见 `VERSIONING.md`。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [V0.0.2] - 2026-11-26
+
+修复 V0.0.1 拍照画面仍红蓝错色的问题：V0.0.1 的代码与说明不一致，实际多开了一次字节交换。
+
+### 修复 / Fixed
+- **拍照画面红蓝错色（本版本重点）**：V0.0.1 的变更说明写的是「关闭字节交换 + 只重排 R/B 位域」，但板级代码实际写成了 `SetSwapBytes(true)` + `SetSwapRBChannels(true)`，即字节交换和通道重排同时开启。字节交换会把 5/6/5 位域打乱，再叠加 R/B 重排后颜色依旧错乱。
+  - 根因澄清：查阅 Linux 内核 OV5640 驱动源码确认，寄存器 `0x4300 = 0x61` 表示 **RGB565 大端**（字节序 `{r[4:0],g[5:3]},{g[2:0],b[4:0]}`），`0x6F` 才是小端——两者都是 **RGB 顺序，并非 BGR**。此前「OV5640 输出 BGR565」的判断有误。
+  - 依据实测反馈反推：仅关字节交换（`swap=false`、不重排）时画面绿色正常、红蓝对调，说明字节序已被 LVGL 正确接受，只差 R/B 两个 5 位通道互换。因此本版本采用 **`SetSwapBytes(false)` + `SetSwapRBChannels(true)`**（四种组合中唯一未真正验证过的一种），一次修正预览与上传 JPEG。
+  - 位域重排公式保持不变：`((v & 0x001F) << 11) | (v & 0x07E0) | ((v >> 11) & 0x001F)`，只交换高低 5 位，保留 G[5:0]。
+- **预览位置**：全屏预览对象按比例缩放后居中（`LV_IMAGE_ALIGN_CENTER`）。320×240 画面在 240×320 屏幕上以宽度为准铺满，不再缩在一角。
+
+### 说明 / Notes
+- 若本版本颜色仍不理想，可快速在 `compact_wifi_board_s3cam.cc` 切换四个独立开关组合（`SetSwapBytes` × `SetSwapRBChannels`）中的任意一种，重新构建即可；两开关相互正交，调整成本很低。
+
+### 修改 / Changed
+- `main/boards/bread-compact-wifi-s3cam/compact_wifi_board_s3cam.cc`
+- `main/boards/common/esp32_camera.cc`
+- `main/display/lcd_display.cc`
+- `main/Kconfig.projbuild`
+
 ## [V0.0.1] - 2026-11-26
 
 首个版本。基于官方 `78/xiaozhi-esp32` 的 `v2.6.0` tag（commit `4de00ae`）定制，面向面包板 ESP32-S3-CAM（**OV5640** 摄像头 + ST7789 240×320 屏幕），并修复拍照红蓝错色问题。

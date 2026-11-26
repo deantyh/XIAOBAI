@@ -114,18 +114,20 @@ bool Esp32Camera::Capture() {
             encode_buf_size_ = data_size;
         }
 
-        // Copy data to encode buffer with optional byte swapping.
-        // Some sensors (e.g. OV5640) output BGR565 even though the driver is
-        // configured for PIXFORMAT_RGB565. In that case we must additionally
-        // reorder the R and B 5-bit fields, otherwise red/blue appear swapped
-        // in both the on-screen preview and the JPEG sent to the AI service.
+        // Copy data to encode buffer with optional byte swapping and/or R/B
+        // channel reordering. Both are independent, per-board corrections:
+        //   - byte swap  (__builtin_bswap16): fixes byte order only
+        //   - R/B reorder: fixes the two 5-bit channel fields, keeps G[5:0]
+        // For this board's OV5640 the frame buffer arrives in the byte order
+        // LVGL already accepts, with only red and blue swapped, so the board
+        // enables just the R/B reorder (swap_bytes=false, swap_rb=true).
+        // The same buffer feeds the preview and the uploaded JPEG.
         uint16_t* src = (uint16_t*)current_fb_->buf;
         uint16_t* dst = (uint16_t*)encode_buf_;
         if (swap_rb_channels_enabled_) {
             for (size_t i = 0; i < pixel_count; i++) {
                 uint16_t v = swap_bytes_enabled_ ? __builtin_bswap16(src[i]) : src[i];
-                // BGR565 -> RGB565: move B[4:0] (bits 15..11) to bits 4..0 and
-                // R[4:0] (bits 4..0) to bits 15..11, keep G[5:0] unchanged.
+                // Exchange the high and low 5-bit fields; keep G[5:0] intact.
                 dst[i] = (uint16_t)(((v & 0x001F) << 11) | (v & 0x07E0) | ((v >> 11) & 0x001F));
             }
         } else if (swap_bytes_enabled_) {

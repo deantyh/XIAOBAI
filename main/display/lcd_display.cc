@@ -1126,12 +1126,12 @@ void LcdDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
     lv_image_set_src(preview_image_, img_dsc);
     if (img_dsc->header.w > 0 && img_dsc->header.h > 0) {
 #if CONFIG_BREAD_COMPACT_WIFI_CAM_CAMERA_FIXES
-        // Scale to nearly fill the screen while preserving aspect ratio.
-        // LVGL scale: 256 = 100%. Fit the smaller of width/height ratios so
-        // the whole frame stays visible, leaving a thin margin.
-        lv_coord_t zoom_w = (224 * width_) / img_dsc->header.w;   // 87.5% of screen width
-        lv_coord_t zoom_h = (224 * height_) / img_dsc->header.h;  // 87.5% of screen height
+        // Fit the whole frame on the panel and center it. LVGL scale 256 = 100%.
+        // QVGA is 320x240 on a 240x320 panel, so the width is the limiting side.
+        lv_coord_t zoom_w = (256 * width_) / img_dsc->header.w;
+        lv_coord_t zoom_h = (256 * height_) / img_dsc->header.h;
         lv_coord_t zoom = (zoom_w < zoom_h) ? zoom_w : zoom_h;
+        lv_image_set_inner_align(preview_image_, LV_IMAGE_ALIGN_CENTER);
         lv_image_set_scale(preview_image_, zoom);
 #else
         // zoom factor 0.5
