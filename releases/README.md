@@ -2,7 +2,17 @@
 
 本目录存放固件的本地副本，与 GitHub Release 保持一致。
 
-## V0.0.2（当前推荐版本）
+## V0.0.3（当前推荐版本）
+
+- 发布日期：2026-11-26
+- 主要变更：修复 V0.0.2 拍照出现彩虹/等高线状伪彩的问题。OV5640 实际输出 YUYV（YUV422），V0.0.3 改为原生 YUV422 输入，预览显式转换为 RGB565，AI 上传直接编码原生 YUYV。
+- 固件文件：
+  - `V0.0.3_bread-compact-wifi-s3cam-240x320-dl_merged.bin`（9,651,265 字节，MD5 `997d913c36e1d96393ceb5c0f1fc23a1`）
+  - `V0.0.3_bread-compact-wifi-s3cam-240x320-dl.zip`（2,518,647 字节，MD5 `bb38105fd410effa0724b464ce24e046`）
+- GitHub Release 下载：<https://github.com/deantyh/XIAOBAI/releases/tag/V0.0.3>
+- 云端构建：Actions run `45791755160`（commit `4b544b4`），success。
+
+## V0.0.2（旧版）
 
 - 发布日期：2026-11-26
 - 主要变更：修复 V0.0.1 拍照仍红蓝的问题。V0.0.1 的代码与说明不一致，实际多开了一次字节交换；V0.0.2 改为「关闭字节交换 + 只做 R/B 位域重排」，一次修正预览与上传 JPEG，预览图同时居中铺满。
