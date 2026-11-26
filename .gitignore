@@ -9,12 +9,17 @@ sdkconfig.old
 sdkconfig
 dependencies.lock
 .env
-releases/
+# XIAOBAI: keep firmware release artifacts under releases/ in sync with GitHub.
+# (Official upstream ignored this directory; we track it so both copies stay identical.)
 main/assets/lang_config.h
 main/mmap_generate_emoji.h
 .DS_Store
 .cache
 *.pyc
+# XIAOBAI: firmware binaries are versioned under releases/ on purpose.
+# Keep the generic *.bin ignore for build artifacts elsewhere.
 *.bin
+!releases/*.bin
 mmap_generate_*.h
 .clangd
+build_log_dl.zip
