@@ -3,6 +3,22 @@
 本项目（XIAOBAI）的所有版本变更记录。版本号规则见 `VERSIONING.md`。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [V0.0.4] - 2026-11-26
+
+修复 V0.0.3 拍照画面整体偏青蓝、红通道不足的问题。白纸测试确认：屏幕 UI 白色文字显示为中性白（约 RGB 203/201/196），而摄像头预览的白纸呈青蓝色（约 RGB 106/192/244），说明屏幕与手机拍摄链路正常，偏色来自摄像头输出数据本身。
+
+### 修复 / Fixed
+- **根因**：OV5640 模组的自动白平衡（AWB）虽处于自动模式，但收敛不准。白纸在原始 YUYV 帧中 U≈164、V≈87，而中性白应为 U=V=128，即 U 偏高约 36、V 偏低约 41，导致转换后红色不足、画面偏青蓝。
+- **YUV 域白平衡校正**：在 `Esp32Camera::Capture()` 中新增 `CorrectYuyvWhiteBalance()`，对整帧 YUYV 的 U 分量减 36、V 分量加 41（限幅 0–255），把中性色拉回中性。校正系数集中在 `kWhiteBalanceUOffset` / `kWhiteBalanceVOffset` 两个常量，便于后续按实测微调。
+- **预览与上传一致**：校正后的 YUYV 帧缓存在 `yuv_corrected_buf_`，既用于预览的 YUYV→RGB565 转换，也作为 `Explain()` 的 JPEG 编码输入，AI 看到的颜色与屏幕预览一致。
+
+### 验证 / Verification
+- 用白纸对着摄像头拍照：预览与上传图片中的白纸应恢复中性白/浅灰，不再偏青蓝。
+
+### 修改 / Changed
+- `main/boards/common/esp32_camera.h`
+- `main/boards/common/esp32_camera.cc`
+
 ## [V0.0.3] - 2026-11-26
 
 修复 V0.0.2 拍照仍出现彩虹/等高线状伪彩的问题。根据实拍截图判断，OV5640 在该套件上实际输出的是 **YUYV（YUV422）**，此前强行按 RGB565 解析，导致亮度基本正常但色相被严重打乱；仅调整 RGB565 字节序或 R/B 位域无法根治。

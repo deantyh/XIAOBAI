@@ -27,8 +27,10 @@ private:
     std::string explain_token_;
     std::thread encoder_thread_;
     camera_fb_t* current_fb_ = nullptr;
-    uint8_t* encode_buf_ = nullptr;  // Buffer for JPEG encoding (with optional byte swap)
+    uint8_t* encode_buf_ = nullptr;  // RGB565 preview buffer (with optional byte swap)
     size_t encode_buf_size_ = 0;
+    uint8_t* yuv_corrected_buf_ = nullptr;  // White-balance corrected YUYV (V0.0.4)
+    size_t yuv_corrected_buf_size_ = 0;
 
 public:
     Esp32Camera(const camera_config_t& config);

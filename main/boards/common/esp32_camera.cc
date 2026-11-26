@@ -17,6 +17,32 @@
 
 #define TAG "Esp32Camera"
 
+// V0.0.4: OV5640 white-balance correction.
+// Measured on this kit with a white sheet: the raw YUYV frame had U≈164 and
+// V≈87 for a neutral white target (expected U=V=128), which produced a cyan
+// cast with a weak red channel. Subtracting 36 from U and adding 41 to V
+// brings neutral white back to R=G=B. The same corrected frame feeds both
+// the LVGL preview and the uploaded JPEG.
+static constexpr int kWhiteBalanceUOffset = -36;
+static constexpr int kWhiteBalanceVOffset = 41;
+
+static inline uint8_t ClampByte(int v) {
+    return static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
+}
+
+static void CorrectYuyvWhiteBalance(const uint8_t* src, uint8_t* dst, size_t pixel_count) {
+    // One YUYV group is 4 bytes [Y0, U, Y1, V] covering two pixels.
+    size_t groups = pixel_count / 2;
+    for (size_t g = 0; g < groups; ++g) {
+        const uint8_t* s = src + g * 4;
+        uint8_t* d = dst + g * 4;
+        d[0] = s[0];                                         // Y0
+        d[1] = ClampByte((int)s[1] + kWhiteBalanceUOffset);  // U (Cb)
+        d[2] = s[2];                                         // Y1
+        d[3] = ClampByte((int)s[3] + kWhiteBalanceVOffset);  // V (Cr)
+    }
+}
+
 // Convert one YUYV (YUV422) sample pair to an RGB565 pixel using BT.601.
 // The OV5640 on the breadboard S3CAM kit outputs YUYV; converting explicitly
 // avoids all RGB565 byte-order / R-B-channel guesswork.
@@ -92,6 +118,11 @@ Esp32Camera::~Esp32Camera() {
             encode_buf_ = nullptr;
             encode_buf_size_ = 0;
         }
+        if (yuv_corrected_buf_) {
+            heap_caps_free(yuv_corrected_buf_);
+            yuv_corrected_buf_ = nullptr;
+            yuv_corrected_buf_size_ = 0;
+        }
         esp_camera_deinit();
         streaming_on_ = false;
     }
@@ -163,8 +194,24 @@ bool Esp32Camera::Capture() {
                 memcpy(encode_buf_, current_fb_->buf, data_size);
             }
         } else {
-            // OV5640 on the breadboard S3CAM kit: native YUYV -> RGB565.
-            YuyvToRgb565(current_fb_->buf, (uint16_t*)encode_buf_, pixel_count);
+            // OV5640 on the breadboard S3CAM kit: correct white balance in the
+            // YUV domain first, then convert YUYV -> RGB565 for the preview.
+            // The corrected YUYV buffer is also reused by Explain() for JPEG.
+            if (yuv_corrected_buf_size_ < data_size) {
+                if (yuv_corrected_buf_) {
+                    heap_caps_free(yuv_corrected_buf_);
+                }
+                yuv_corrected_buf_ =
+                    (uint8_t*)heap_caps_malloc(data_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                if (yuv_corrected_buf_ == nullptr) {
+                    ESP_LOGE(TAG, "Failed to allocate corrected YUYV buffer");
+                    yuv_corrected_buf_size_ = 0;
+                    return false;
+                }
+                yuv_corrected_buf_size_ = data_size;
+            }
+            CorrectYuyvWhiteBalance(current_fb_->buf, yuv_corrected_buf_, pixel_count);
+            YuyvToRgb565(yuv_corrected_buf_, (uint16_t*)encode_buf_, pixel_count);
         }
 
         // Allocate separate buffer for preview display
@@ -268,12 +315,17 @@ std::expected<std::string, std::string> Esp32Camera::Explain(const std::string& 
             return std::unexpected("Unsupported pixel format");
     }
 
-    // Use encode buffer for RGB565, otherwise use original frame buffer
+    // Use the corrected buffer for RGB565/YUYV, otherwise the original frame.
+    // V0.0.4: YUYV frames are white-balance corrected in Capture(); upload the
+    // corrected data so the AI sees the same colors as the on-screen preview.
     uint8_t* jpeg_src_buf = current_fb_->buf;
     size_t jpeg_src_len = current_fb_->len;
     if (current_fb_->format == PIXFORMAT_RGB565 && encode_buf_ != nullptr) {
         jpeg_src_buf = encode_buf_;
         jpeg_src_len = encode_buf_size_;
+    } else if (current_fb_->format == PIXFORMAT_YUV422 && yuv_corrected_buf_ != nullptr) {
+        jpeg_src_buf = yuv_corrected_buf_;
+        jpeg_src_len = current_fb_->width * current_fb_->height * 2;
     }
 
     int64_t start_time = esp_timer_get_time();
