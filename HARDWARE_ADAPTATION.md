@@ -1,9 +1,9 @@
-# 硬件适配说明（XIAOBAI V0.0.2）
+# 硬件适配说明（XIAOBAI V0.0.3）
 
 ## 目标硬件
 - 主控：ESP32-S3（面包板 ESP32-S3-CAM）
 - 屏幕：ST7789 SPI LCD，240×320，背光 GPIO38，IPS 反色开启
-- 摄像头：**OV5640**（DVP）—— 帧缓冲字节序已是 LVGL 可接受的原生顺序，但红蓝两个 5 位通道对调。V0.0.2 只做 R/B 位域重排、不做字节交换（见 CHANGELOG V0.0.2）
+- 摄像头：**OV5640**（DVP）—— 该套件实际输出 YUYV（YUV422）。V0.0.3 使用原生 YUV422 输入，预览由 YUYV 显式转换为 RGB565，AI 上传直接编码原生 YUYV（见 CHANGELOG V0.0.3）
 - 音频：I2S simplex，麦克风 WS/SCK/DIN = GPIO1/2/42，喇叭 DOUT/BCLK/LRCK = GPIO39/40/41
 - 电池：GPIO3 充电检测，ADC2/CH3 电量采样（仅 `...-dl` 变体启用）
 
