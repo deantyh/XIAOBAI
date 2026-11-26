@@ -3,6 +3,24 @@
 本项目（XIAOBAI）的所有版本变更记录。版本号规则见 `VERSIONING.md`。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [V0.0.3] - 2026-11-26
+
+修复 V0.0.2 拍照仍出现彩虹/等高线状伪彩的问题。根据实拍截图判断，OV5640 在该套件上实际输出的是 **YUYV（YUV422）**，此前强行按 RGB565 解析，导致亮度基本正常但色相被严重打乱；仅调整 RGB565 字节序或 R/B 位域无法根治。
+
+### 修复 / Fixed
+- **摄像头输入格式改为原生 YUV422**：定制变体下 `config.pixel_format` 由 `PIXFORMAT_RGB565` 改为 `PIXFORMAT_YUV422`，不再依赖 OV5640 的 RGB565 寄存器配置。
+- **新增显式 YUYV→RGB565 转换**：`Esp32Camera::Capture()` 中使用 BT.601 整数公式，把摄像头原生 YUYV 数据转换成 LVGL 可直接显示的 RGB565 预览；每两个像素共享一组 U/V，转换在 PSRAM 缓冲区中完成。
+- **AI 上传保持原生 YUYV**：`Explain()` 对 YUV422 帧直接以 `V4L2_PIX_FMT_YUYV` 送给 JPEG 编码器，不再经过有损的 RGB565 中转，去掉了红蓝/伪彩修正链条。
+- 移除板级 `SetSwapBytes()` / `SetSwapRBChannels()` 调用；保留这两个接口供其他 RGB565 板型使用，但本定制变体不再需要。
+
+### 说明 / Notes
+- 画面中若仍有细密彩色条纹，可能是手机拍摄 LCD 产生的摩尔纹，请以肉眼直视屏幕或改变拍摄角度为准。
+- 本版本只改摄像头颜色链路，不影响语音、联网、电池管理和预览缩放逻辑。
+
+### 修改 / Changed
+- `main/boards/bread-compact-wifi-s3cam/compact_wifi_board_s3cam.cc`
+- `main/boards/common/esp32_camera.cc`
+
 ## [V0.0.2] - 2026-11-26
 
 修复 V0.0.1 拍照画面仍红蓝错色的问题：V0.0.1 的代码与说明不一致，实际多开了一次字节交换。

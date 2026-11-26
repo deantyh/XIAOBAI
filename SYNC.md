@@ -15,7 +15,7 @@
 
 1. 修改代码与文档，更新 `VERSION`、`CHANGELOG.md`。
 2. 本地提交到 `main`，推送到 GitHub（`git push origin main`）。
-3. 打版本 tag（如 `V0.0.2`）并推送（`git push origin V0.0.2`）。
+3. 打版本 tag（如 `V0.0.3`）并推送（`git push origin V0.0.3`）。
 4. 触发 GitHub Actions `build-custom` 构建固件。
 5. 下载构建产物到 `E:\XIAOBAI\releases\`，再次提交推送，使仓库与本地固件一致。
 6. 核对：本地与 GitHub 文件列表、MD5 一致。

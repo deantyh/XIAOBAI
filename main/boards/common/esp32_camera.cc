@@ -17,6 +17,35 @@
 
 #define TAG "Esp32Camera"
 
+// Convert one YUYV (YUV422) sample pair to an RGB565 pixel using BT.601.
+// The OV5640 on the breadboard S3CAM kit outputs YUYV; converting explicitly
+// avoids all RGB565 byte-order / R-B-channel guesswork.
+static inline uint16_t YuyvSampleToRgb565(uint8_t y, uint8_t u, uint8_t v) {
+    int c = (int)y - 16;
+    int d = (int)u - 128;
+    int e = (int)v - 128;
+    int r = (298 * c + 409 * e + 128) >> 8;
+    int g = (298 * c - 100 * d - 208 * e + 128) >> 8;
+    int b = (298 * c + 516 * d + 128) >> 8;
+    r = r < 0 ? 0 : (r > 255 ? 255 : r);
+    g = g < 0 ? 0 : (g > 255 ? 255 : g);
+    b = b < 0 ? 0 : (b > 255 ? 255 : b);
+    return (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+}
+
+static void YuyvToRgb565(const uint8_t* src, uint16_t* dst, size_t pixel_count) {
+    size_t i = 0;
+    for (; i + 1 < pixel_count; i += 2) {
+        const uint8_t* p = src + (i / 2) * 4;
+        dst[i] = YuyvSampleToRgb565(p[0], p[1], p[3]);  // Y0, U, V
+        dst[i + 1] = YuyvSampleToRgb565(p[2], p[1], p[3]);  // Y1, U, V
+    }
+    if (i < pixel_count) {
+        const uint8_t* p = src + (i / 2) * 4;
+        dst[i] = YuyvSampleToRgb565(p[0], p[1], p[3]);
+    }
+}
+
 #if CONFIG_XIAOZHI_CAMERA_MIRROR_CONFIGURED
 #if CONFIG_XIAOZHI_CAMERA_HMIRROR
 static constexpr bool kConfiguredHMirror = true;
@@ -94,8 +123,11 @@ bool Esp32Camera::Capture() {
         }
     }
 
-    // Prepare encode buffer for RGB565 format (with optional byte swapping)
-    if (current_fb_->format == PIXFORMAT_RGB565) {
+    // Build an RGB565 buffer for the LVGL preview. RGB565 frames are reused
+    // with optional byte/R-B corrections; YUYV frames are converted here.
+    // JPEG upload keeps the native frame format (YUYV is encoded directly),
+    // so no color information is lost on the AI path.
+    if (current_fb_->format == PIXFORMAT_RGB565 || current_fb_->format == PIXFORMAT_YUV422) {
         size_t pixel_count = current_fb_->width * current_fb_->height;
         size_t data_size = pixel_count * 2;
 
@@ -114,28 +146,25 @@ bool Esp32Camera::Capture() {
             encode_buf_size_ = data_size;
         }
 
-        // Copy data to encode buffer with optional byte swapping and/or R/B
-        // channel reordering. Both are independent, per-board corrections:
-        //   - byte swap  (__builtin_bswap16): fixes byte order only
-        //   - R/B reorder: fixes the two 5-bit channel fields, keeps G[5:0]
-        // For this board's OV5640 the frame buffer arrives in the byte order
-        // LVGL already accepts, with only red and blue swapped, so the board
-        // enables just the R/B reorder (swap_bytes=false, swap_rb=true).
-        // The same buffer feeds the preview and the uploaded JPEG.
-        uint16_t* src = (uint16_t*)current_fb_->buf;
-        uint16_t* dst = (uint16_t*)encode_buf_;
-        if (swap_rb_channels_enabled_) {
-            for (size_t i = 0; i < pixel_count; i++) {
-                uint16_t v = swap_bytes_enabled_ ? __builtin_bswap16(src[i]) : src[i];
-                // Exchange the high and low 5-bit fields; keep G[5:0] intact.
-                dst[i] = (uint16_t)(((v & 0x001F) << 11) | (v & 0x07E0) | ((v >> 11) & 0x001F));
-            }
-        } else if (swap_bytes_enabled_) {
-            for (size_t i = 0; i < pixel_count; i++) {
-                dst[i] = __builtin_bswap16(src[i]);
+        if (current_fb_->format == PIXFORMAT_RGB565) {
+            // Legacy RGB565 boards may still need byte-order/R-B fixes.
+            uint16_t* src = (uint16_t*)current_fb_->buf;
+            uint16_t* dst = (uint16_t*)encode_buf_;
+            if (swap_rb_channels_enabled_) {
+                for (size_t i = 0; i < pixel_count; i++) {
+                    uint16_t v = swap_bytes_enabled_ ? __builtin_bswap16(src[i]) : src[i];
+                    dst[i] = (uint16_t)(((v & 0x001F) << 11) | (v & 0x07E0) | ((v >> 11) & 0x001F));
+                }
+            } else if (swap_bytes_enabled_) {
+                for (size_t i = 0; i < pixel_count; i++) {
+                    dst[i] = __builtin_bswap16(src[i]);
+                }
+            } else {
+                memcpy(encode_buf_, current_fb_->buf, data_size);
             }
         } else {
-            memcpy(encode_buf_, current_fb_->buf, data_size);
+            // OV5640 on the breadboard S3CAM kit: native YUYV -> RGB565.
+            YuyvToRgb565(current_fb_->buf, (uint16_t*)encode_buf_, pixel_count);
         }
 
         // Allocate separate buffer for preview display

@@ -16,7 +16,7 @@
 
 ## 当前版本
 
-`V0.0.2`（详见 `VERSION` 与 `CHANGELOG.md`）。
+`V0.0.3`（详见 `VERSION` 与 `CHANGELOG.md`）。
 
 ## 源码结构
 

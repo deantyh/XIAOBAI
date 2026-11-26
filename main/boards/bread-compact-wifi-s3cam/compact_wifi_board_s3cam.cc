@@ -161,12 +161,17 @@ private:
         config.pin_pwdn = CAMERA_PIN_PWDN;
         config.pin_reset = CAMERA_PIN_RESET;
         config.xclk_freq_hz = XCLK_FREQ_HZ;
-        config.pixel_format = PIXFORMAT_RGB565;
 #if CONFIG_BREAD_COMPACT_WIFI_CAM_CAMERA_FIXES
+        // The OV5640 on this breadboard kit really outputs YUYV (YUV422).
+        // Treating those bytes as RGB565 produced the rainbow/false-color
+        // preview. Request YUV422 natively; Esp32Camera::Capture() converts it
+        // to RGB565 for the LVGL preview, while JPEG upload keeps native YUYV.
+        config.pixel_format = PIXFORMAT_YUV422;
         // QVGA (320x240) matches this board's OV sensor and 240x320 panel,
         // producing a larger, correctly framed preview.
         config.frame_size = FRAMESIZE_QVGA;
 #else
+        config.pixel_format = PIXFORMAT_RGB565;
         config.frame_size = FRAMESIZE_VGA;
 #endif
         config.jpeg_quality = 12;
@@ -175,17 +180,8 @@ private:
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
         camera_ = new Esp32Camera(config);
 #if CONFIG_BREAD_COMPACT_WIFI_CAM_CAMERA_FIXES
-        // This board uses an OV5640. The driver programs 0x4300 = 0x61 and
-        // reports PIXFORMAT_RGB565; the frame buffer lands in the byte order
-        // that the LVGL preview already treats as native (no extra byte swap).
-        // Empirically that yields a picture with correct green but red/blue
-        // reversed, i.e. the two 5-bit channels are swapped. So we keep the
-        // native byte order and only exchange R <-> B on the way into
-        // encode_buf_, which fixes both the preview and the uploaded JPEG.
-        // Do NOT enable SetSwapBytes: byte-swapping on top of the channel
-        // reorder scrambles the 5/6/5 fields and produces a wrong picture.
-        camera_->SetSwapBytes(false);
-        camera_->SetSwapRBChannels(true);
+        // Color handling now happens per pixel format inside Capture().
+        // No RGB565 byte-order or R/B channel swap is needed any more.
 #endif
     }
 
