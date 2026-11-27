@@ -3,6 +3,7 @@
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <img_converters.h>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -17,29 +18,65 @@
 
 #define TAG "Esp32Camera"
 
-// V0.0.4: OV5640 white-balance correction.
-// Measured on this kit with a white sheet: the raw YUYV frame had U≈164 and
-// V≈87 for a neutral white target (expected U=V=128), which produced a cyan
-// cast with a weak red channel. Subtracting 36 from U and adding 41 to V
-// brings neutral white back to R=G=B. The same corrected frame feeds both
-// the LVGL preview and the uploaded JPEG.
-static constexpr int kWhiteBalanceUOffset = -36;
-static constexpr int kWhiteBalanceVOffset = 41;
+// V0.0.5: Adaptive white balance for the OV5640 on this kit.
+// V0.0.4 used fixed U/V offsets (-36/+41) derived from a phone photo of the
+// LCD. That photo passed through the panel and the phone's own ISP, so the
+// inferred offsets were far too small: real white-sheet previews were still
+// heavily cyan (R≈15, G≈130, B≈254), implying raw U≈200 / V≈69 versus the
+// neutral U=V=128. Fixed guesses keep missing the right value.
+//
+// Instead, apply a gray-world auto white balance on every frame: measure the
+// average U and V, then shift them toward 128. This adapts to whatever the
+// sensor actually outputs (and to changing light) without any hand-tuned
+// constant. The offset is clamped so a strongly colored scene cannot be
+// over-corrected, and the raw/derived values are logged once per capture so
+// the sensor behaviour can be diagnosed from serial output.
+static constexpr int kAwbNeutral = 128;
+static constexpr int kAwbMaxOffset = 80;  // limit per-channel correction
 
 static inline uint8_t ClampByte(int v) {
     return static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
 }
 
+static inline int ClampOffset(int v) {
+    return v < -kAwbMaxOffset ? -kAwbMaxOffset : (v > kAwbMaxOffset ? kAwbMaxOffset : v);
+}
+
 static void CorrectYuyvWhiteBalance(const uint8_t* src, uint8_t* dst, size_t pixel_count) {
     // One YUYV group is 4 bytes [Y0, U, Y1, V] covering two pixels.
-    size_t groups = pixel_count / 2;
+    const size_t groups = pixel_count / 2;
+
+    // First pass: sample U/V across the frame to estimate the average.
+    // Sampling (rather than every pixel) keeps the cost low on ESP32.
+    uint64_t sum_u = 0;
+    uint64_t sum_v = 0;
+    size_t samples = 0;
+    const size_t step = (groups / 512) ? (groups / 512) : 1;
+    for (size_t g = 0; g < groups; g += step) {
+        const uint8_t* s = src + g * 4;
+        sum_u += s[1];  // U (Cb)
+        sum_v += s[3];  // V (Cr)
+        ++samples;
+    }
+    if (samples == 0) {
+        memcpy(dst, src, pixel_count * 2);
+        return;
+    }
+
+    const int avg_u = (int)(sum_u / samples);
+    const int avg_v = (int)(sum_v / samples);
+    const int offset_u = ClampOffset(kAwbNeutral - avg_u);
+    const int offset_v = ClampOffset(kAwbNeutral - avg_v);
+    ESP_LOGI(TAG, "AWB: raw U=%d V=%d -> offset U=%+d V=%+d", avg_u, avg_v, offset_u, offset_v);
+
+    // Second pass: apply the correction to the whole frame.
     for (size_t g = 0; g < groups; ++g) {
         const uint8_t* s = src + g * 4;
         uint8_t* d = dst + g * 4;
-        d[0] = s[0];                                         // Y0
-        d[1] = ClampByte((int)s[1] + kWhiteBalanceUOffset);  // U (Cb)
-        d[2] = s[2];                                         // Y1
-        d[3] = ClampByte((int)s[3] + kWhiteBalanceVOffset);  // V (Cr)
+        d[0] = s[0];                              // Y0
+        d[1] = ClampByte((int)s[1] + offset_u);   // U (Cb)
+        d[2] = s[2];                              // Y1
+        d[3] = ClampByte((int)s[3] + offset_v);   // V (Cr)
     }
 }
 
@@ -194,9 +231,10 @@ bool Esp32Camera::Capture() {
                 memcpy(encode_buf_, current_fb_->buf, data_size);
             }
         } else {
-            // OV5640 on the breadboard S3CAM kit: correct white balance in the
-            // YUV domain first, then convert YUYV -> RGB565 for the preview.
-            // The corrected YUYV buffer is also reused by Explain() for JPEG.
+            // OV5640 on the breadboard S3CAM kit: apply gray-world white
+            // balance in the YUV domain, then convert YUYV -> RGB565 for the
+            // preview. The corrected YUYV buffer is reused by Explain() for
+            // JPEG so the AI sees the same colors as the screen.
             if (yuv_corrected_buf_size_ < data_size) {
                 if (yuv_corrected_buf_) {
                     heap_caps_free(yuv_corrected_buf_);
@@ -316,7 +354,7 @@ std::expected<std::string, std::string> Esp32Camera::Explain(const std::string& 
     }
 
     // Use the corrected buffer for RGB565/YUYV, otherwise the original frame.
-    // V0.0.4: YUYV frames are white-balance corrected in Capture(); upload the
+    // YUYV frames are gray-world white-balanced in Capture(); upload the
     // corrected data so the AI sees the same colors as the on-screen preview.
     uint8_t* jpeg_src_buf = current_fb_->buf;
     size_t jpeg_src_len = current_fb_->len;
